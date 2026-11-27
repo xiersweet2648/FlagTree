@@ -10,6 +10,7 @@ Tests core functionality of TLE module, including:
 """
 
 import pytest
+from triton._common_ir import ENABLED as COMMON_IR_ENABLED
 import torch
 import triton
 import inspect
@@ -73,6 +74,14 @@ def _masked_copy_zero_fill_kernel(src, dst):
     tle.gpu.copy(src + offsets, smem, [16], mask=mask)
     values = tl.load(tle.gpu.local_ptr(smem, (offsets, )))
     tl.store(dst + offsets, values)
+
+
+@triton.jit
+def _masked_copy_to_global_kernel(src, dst):
+    offsets = tl.arange(0, 16)
+    smem = tle.gpu.alloc([16], dtype=tl.float32, scope=tle.gpu.smem, nv_mma_shared_layout=False)
+    tle.gpu.copy(src + offsets, smem, [16])
+    tle.gpu.copy(smem, dst + offsets, [16], mask=offsets < 8)
 
 
 @triton.jit
@@ -241,8 +250,12 @@ class TestCopyFrontend:
             target=target,
         )
         ir = module.str_nodebug()
-        assert "arith.constant dense<0.000000e+00> : tensor<16xf32>" in ir
-        assert "tt.load" in ir
+        if COMMON_IR_ENABLED:
+            copy = next(line for line in ir.splitlines() if "tile.copy" in line)
+            assert " mask " in copy and " other " not in copy
+        else:
+            assert "arith.constant dense<0.000000e+00> : tensor<16xf32>" in ir
+            assert "tt.load" in ir
 
     @pytest.mark.skipif(
         not is_ampere_or_newer(),
@@ -261,6 +274,14 @@ class TestCopyFrontend:
         _masked_copy_zero_fill_kernel[(1, )](src, dst, num_warps=4)
         expected = torch.cat((src[:8], torch.zeros_like(src[8:])))
         torch.testing.assert_close(dst, expected, atol=0, rtol=0)
+
+    @pytest.mark.skipif(not _cuda_backend_available(), reason="requires cuda backend")
+    @pytest.mark.skip_if_tle_unsupported("gpu.alloc", "gpu.copy")
+    def test_masked_copy_to_global_preserves_excluded_lanes(self):
+        src = torch.arange(16, device="cuda", dtype=torch.float32)
+        dst = torch.full_like(src, -1)
+        _masked_copy_to_global_kernel[(1, )](src, dst)
+        torch.testing.assert_close(dst, torch.cat((src[:8], torch.full_like(src[8:], -1))), atol=0, rtol=0)
 
     @staticmethod
     def _make_copy_buffer():
@@ -287,7 +308,11 @@ class TestCopyFrontend:
         )
         ir = module.str_nodebug()
         assert "arith.constant dense<0xFF800000> : tensor<16xf32>" in ir
-        assert "tt.load" in ir
+        if COMMON_IR_ENABLED:
+            copy = next(line for line in ir.splitlines() if "tile.copy" in line)
+            assert " mask " in copy and " other " in copy
+        else:
+            assert "tt.load" in ir
 
     @pytest.mark.skipif(not _cuda_backend_available(), reason="requires cuda backend")
     @pytest.mark.skip_if_tle_unsupported("gpu.alloc", "gpu.copy")
@@ -305,7 +330,11 @@ class TestCopyFrontend:
         assert ("arith.constant dense<0xFC00> : tensor<16xf16>" in ir
                 or ("arith.constant dense<0xFF800000> : tensor<16xf32>" in ir and
                     ("arith.truncf" in ir or "tt.fp_to_fp" in ir)))
-        assert "tt.load" in ir
+        if COMMON_IR_ENABLED:
+            copy = next(line for line in ir.splitlines() if "tile.copy" in line)
+            assert " mask " in copy and " other " in copy
+        else:
+            assert "tt.load" in ir
 
     @pytest.mark.skipif(
         not is_ampere_or_newer(),

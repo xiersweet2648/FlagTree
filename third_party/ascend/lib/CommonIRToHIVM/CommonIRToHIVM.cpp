@@ -766,6 +766,13 @@ struct CommonIRToHIVMPass
 
 void CommonIRToHIVMPass::runOnOperation() {
   auto module = getOperation();
+  if (module.walk([](tile::CopyOp op) {
+        if (op->getNumOperands() == 2)
+          return WalkResult::advance();
+        op.emitError("masked tile.copy is not supported by HIVM lowering");
+        return WalkResult::interrupt();
+      }).wasInterrupted())
+    return signalPassFailure();
 
   // Use greedy rewrite to iteratively apply patterns to fixed point.
   // This avoids the type-conversion complexity of the dialect conversion

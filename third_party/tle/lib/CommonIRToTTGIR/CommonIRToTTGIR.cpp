@@ -591,6 +591,11 @@ convertTileUsers(ModuleOp module, llvm::DenseMap<Value, Value> &mapped,
     }
 
     if (auto op = dyn_cast<tile::CopyOp>(operation)) {
+      if (op->getNumOperands() != 2) {
+        op.emitError("masked tile.copy is not supported by this lowering");
+        failedConversion = true;
+        return;
+      }
       Value src = op.getSrc();
       Value dst = op.getDst();
       if (isa<tile::BufType>(src.getType())) {

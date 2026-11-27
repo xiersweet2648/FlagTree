@@ -495,9 +495,19 @@ convertTileUsers(ModuleOp module, llvm::DenseMap<Value, Value> &mapped,
           failedConversion = true;
           return;
         }
-        if (enableAsyncCopy) {
+        Value mask = op.getMask();
+        Value other = op.getOther();
+        // cp.async can only fill masked lanes with zero bits. Leave explicit
+        // fill values to the predicated load (including negative zero).
+        bool useAsync = enableAsyncCopy && !other;
+        if (mask && !other) {
+          auto valueType = getPointeeValueType(src.getType());
+          other = builder.create<arith::ConstantOp>(
+              op.getLoc(), valueType, cast<TypedAttr>(builder.getZeroAttr(valueType)));
+        }
+        if (useAsync) {
           auto copy = builder.create<ttg::AsyncCopyGlobalToLocalOp>(
-              op.getLoc(), src, dst, Value(), Value(),
+              op.getLoc(), src, dst, mask, other,
               triton::CacheModifier::NONE, triton::EvictionPolicy::NORMAL,
               false);
           auto commit = builder.create<ttg::AsyncCommitGroupOp>(
@@ -508,7 +518,7 @@ convertTileUsers(ModuleOp module, llvm::DenseMap<Value, Value> &mapped,
           builder.create<ttg::AsyncWaitOp>(op.getLoc(), commit.getResult(), 0);
         } else {
           Value value = builder.create<triton::LoadOp>(
-              op.getLoc(), src, triton::CacheModifier::NONE,
+              op.getLoc(), src, mask, other, triton::CacheModifier::NONE,
               triton::EvictionPolicy::NORMAL, false);
           builder.create<ttg::LocalStoreOp>(op.getLoc(), value, dst);
         }
@@ -526,7 +536,7 @@ convertTileUsers(ModuleOp module, llvm::DenseMap<Value, Value> &mapped,
         }
         Value value =
             builder.create<ttg::LocalLoadOp>(op.getLoc(), valueType, src);
-        builder.create<triton::StoreOp>(op.getLoc(), dst, value,
+        builder.create<triton::StoreOp>(op.getLoc(), dst, value, op.getMask(),
                                         triton::CacheModifier::NONE,
                                         triton::EvictionPolicy::NORMAL);
       } else {

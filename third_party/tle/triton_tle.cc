@@ -580,6 +580,17 @@ void init_triton_tle_ir(py::module &&m) {
                op->setAttr("inter_no_alias",
                            self.getBuilder().getBoolAttr(true));
            })
+      .def("create_masked_tile_copy",
+           [](TritonOpBuilder &self, Value src, Value dst, Value mask,
+              Value other) {
+             SmallVector<Value, 2> predication{mask};
+             if (other)
+               predication.push_back(other);
+             self.create<tile::CopyOp>(
+                 src, dst, predication, tile::EngineAttr(),
+                 tile::LayoutAttr::get(self.getBuilder().getContext(), tile::Layout::ND),
+                 tile::NZLayoutAttr(), UnitAttr(), StringAttr());
+           })
       .def("create_tile_get_memdesc",
            [](TritonOpBuilder &self, Type resultTy, Value source) -> Value {
              return self

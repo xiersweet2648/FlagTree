@@ -225,3 +225,19 @@ module {
     tt.return
   }
 }
+
+// -----
+
+tt.func @bad_mask(%ptr: tensor<8x!tt.ptr<f32>>, %buf: !tile.buf<[8], f32, shared>, %mask: tensor<4xi1>) {
+  // expected-error@+1 {{mask must be an i1 tensor with the buffer shape}}
+  tile.copy %ptr -> %buf mask %mask : tensor<4xi1> : tensor<8x!tt.ptr<f32>>, !tile.buf<[8], f32, shared>
+  tt.return
+}
+
+// -----
+
+tt.func @bad_other(%ptr: tensor<8x!tt.ptr<f32>>, %buf: !tile.buf<[8], f32, shared>, %mask: tensor<8xi1>, %other: tensor<8xf16>) {
+  // expected-error@+1 {{other must match the buffer shape and element type}}
+  tile.copy %ptr -> %buf mask %mask : tensor<8xi1> other %other : tensor<8xf16> : tensor<8x!tt.ptr<f32>>, !tile.buf<[8], f32, shared>
+  tt.return
+}

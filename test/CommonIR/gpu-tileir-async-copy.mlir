@@ -13,7 +13,8 @@ module {
     %sp = tt.addptr %s, %index : tensor<128x!tt.ptr<f32>>, tensor<128xi32>
     %dp = tt.addptr %d, %index : tensor<128x!tt.ptr<f32>>, tensor<128xi32>
     %buf = tile.alloc {space = 7 : i64, tle.gpu_layout = #shared} : <[128], f32, shared>
-    tile.copy %sp -> %buf : tensor<128x!tt.ptr<f32>>, !tile.buf<[128], f32, shared>
+    // Generic assembly produced before mask/other were added has no segment sizes.
+    "tile.copy"(%sp, %buf) : (tensor<128x!tt.ptr<f32>>, !tile.buf<[128], f32, shared>) -> ()
     tile.copy %buf -> %dp : !tile.buf<[128], f32, shared>, tensor<128x!tt.ptr<f32>>
     tt.return
   }
