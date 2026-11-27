@@ -437,6 +437,16 @@ convertTileUsers(ModuleOp module, llvm::DenseMap<Value, Value> &mapped,
         failedConversion = true;
         return;
       }
+      if (auto view = dyn_cast<ttg::MemDescType>(op.getResult().getType())) {
+        if (view != (*source).getType()) {
+          op.emitError("storage view must preserve the shared buffer descriptor");
+          failedConversion = true;
+          return;
+        }
+        op.getResult().replaceAllUsesWith(*source);
+        eraseOps.push_back(op);
+        return;
+      }
       if (failed(
               checkTensorType(op, op.getResult().getType(),
                               cast<ttg::MemDescType>((*source).getType())))) {

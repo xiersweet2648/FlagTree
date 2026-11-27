@@ -617,6 +617,10 @@ void init_triton_tle_ir(py::module &&m) {
              op->setAttr("tle.gpu_layout", targetLayout);
              return op.getResult();
            })
+      .def("create_tile_storage_view",
+           [](TritonOpBuilder &self, Type resultTy, Value src) -> Value {
+             return self.create<tile::ToTensorOp>(resultTy, src).getResult();
+           })
       .def("create_tile_to_tensor",
            [](TritonOpBuilder &self, Value &src, bool /*writable*/) -> Value {
              auto srcBuf = mlir::cast<tile::BufType>(src.getType());
